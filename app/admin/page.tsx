@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Users, Settings, LogOut, Bell,
   CirclePlus, Pencil, Trash, Save, CircleX, TrendingUp, Clock,
   CheckCircle, XCircle, AlertCircle, Search, Shield, Calendar,
-  MapPin, DollarSign, Activity, Eye, FileText, Upload
+  MapPin, DollarSign, Activity, Eye, FileText, Upload, QrCode
 } from 'lucide-react'
 import { PRE_CHECKLIST } from '../../lib/constants'
 
@@ -17,7 +17,7 @@ interface Programme {
   budget: number; start_date: string; end_date: string; status: string; created_at: string
 }
 interface Profile { id: string; full_name: string; email: string; roles: { name: string } | null }
-type NavItem = 'dashboard' | 'programmes' | 'users' | 'settings'
+type NavItem = 'dashboard' | 'programmes' | 'users' | 'attendance'| 'settings' 
 
 /* ─── HELPERS ────────────────────────────────────────────────────────────── */
 function getStatusConfig(status: string) {
@@ -921,7 +921,8 @@ export default function AdminHomepage() {
   const navItems: { id: NavItem; icon: React.ElementType; label: string }[] = [
     { id: 'dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'programmes', icon: BookOpen,         label: 'Add Programmes' },
-    { id: 'users',      icon: Users,            label: 'Users' },
+    { id: 'attendance', icon: QrCode,           label: 'Attendance' },
+    { id: 'users',      icon: Users,            label: 'Users' },    
     { id: 'settings',   icon: Settings,         label: 'Settings' },
   ]
 
@@ -931,6 +932,7 @@ export default function AdminHomepage() {
     if (id === 'programmes') router.push('/create-programme-form')
     if (id === 'users')      router.push('/admin/users')
     if (id === 'settings')   router.push('/profile')
+    if (id === 'attendance') router.push('/admin/attendance')
   }
 
   const tableProps = {
