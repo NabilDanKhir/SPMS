@@ -20,6 +20,7 @@ import {
   FileText,
   Settings,
   Plus,
+  QrCode
 } from 'lucide-react'
 
 interface Programme {
@@ -230,12 +231,14 @@ export default function StudentHomepage() {
     { id: 'dashboard',  icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'schedule',   icon: Calendar,         label: 'Schedule' },
     { id: 'profile',    icon: User,             label: 'Profile' },
+    { id: 'attendance', icon: QrCode, label: 'Attendance', path: '/student/attendance' },
   ]
 
   const handleNavClick = (id: string) => {
     setActiveNav(id)
     if (id === 'profile')    router.push('/profile')
     if (id === 'dashboard')  router.push('/student')
+    if (id === 'attendance') router.push('/student/attendance')
   }
 
   const statCards = [

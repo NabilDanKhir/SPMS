@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../../../lib/supabaseClient'
 import {
   LayoutDashboard, BookOpen, Users, Settings, LogOut, Shield,
-  Search, UserPlus, Trash2, X, AlertCircle,
+  Search, UserPlus, Trash2, X, AlertCircle, QrCode
 } from 'lucide-react'
 
 interface UserData {
@@ -17,7 +17,7 @@ interface UserData {
   phone?: string
 }
 
-type NavItem = 'dashboard' | 'programmes' | 'users' | 'settings'
+type NavItem = 'dashboard' | 'programmes' | 'users' | 'settings' | 'attendance'
 
 /* ─── HIGHLIGHT ──────────────────────────────────────────────────────────── */
 function HighlightMatch({ text = '', query = '' }) {
@@ -237,7 +237,8 @@ export default function AdminUsersPage() {
 
   const navItems: { id: NavItem; icon: React.ElementType; label: string; path: string }[] = [
     { id: 'dashboard',  icon: LayoutDashboard, label: 'Dashboard',  path: '/admin' },
-    { id: 'programmes', icon: BookOpen,         label: 'Add Programmes', path: '/create-programme-form' },
+    { id: 'programmes', icon: BookOpen,         label: 'Add Programmes', path: '/create-programme-form' },  
+    { id: 'attendance', icon: QrCode,           label: 'Attendance',     path: '/superadmin/attendance' },
     { id: 'users',      icon: Users,            label: 'Users',      path: '/admin/users' },
     { id: 'settings',   icon: Settings,         label: 'Settings',   path: '/profile' },
   ]
