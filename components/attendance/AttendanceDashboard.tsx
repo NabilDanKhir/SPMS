@@ -1,5 +1,5 @@
 'use client'
-
+import { validateAttendance } from '@/lib/attendance'
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -40,7 +40,11 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [surveys, setSurveys] = useState<UserSurvey[]>([])
   const [roles, setRoles] = useState<UserRole[]>([])
-  
+  const [actionMessage, setActionMessage] = useState('')
+  const [actionType, setActionType] = useState<'approve' | 'reject' | ''>('')
+  const [statusMap, setStatusMap] = useState<{ [key: string]: string }>({})
+  const [attendance, setAttendance] = useState<any[]>([])
+
   const [activeTab, setActiveTab] = useState<'ongoing' | 'expired'>('ongoing')
   const [searchQuery, setSearchQuery] = useState('')
   const [isMobile, setIsMobile] = useState(false)
@@ -66,6 +70,13 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
       setCurrentUserId(userId)
 
       const todayStr = new Date().toISOString().split('T')[0]
+      const { data: attendanceData, error: attendanceError } = await supabase
+  .from('attendance')
+  .select('*')
+
+if (!attendanceError) {
+  setAttendance(attendanceData || [])
+}
 
       // Fetch ALL approved programmes that have started or start today
       const { data: progData } = await supabase
@@ -111,7 +122,12 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
   const getAttendanceStatus = (progId: string) => {
     const hasPre = surveys.some(s => s.programme_id === progId && s.type === 'pre')
     const hasPost = surveys.some(s => s.programme_id === progId && s.type === 'post')
-    return hasPre && hasPost
+    return validateAttendance({
+  qr_start: true,
+  qr_end: true,
+  pre_survey: hasPre,
+  post_survey: hasPost
+}) === "valid"
   }
 
   const handleScan = async (result: string) => {
@@ -219,11 +235,14 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
           </div>
         ) : (
           filteredProgrammes.map(prog => {
-            const isAttended = getAttendanceStatus(prog.id)
+            const progAttendance = attendance.filter(
+  a => String(a.programme_id) === String(prog.id)
+)
             return (
               <div 
-                key={prog.id} onClick={() => setSelectedProg(prog)}
-                style={{ background: '#0c1526', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', cursor: 'pointer', transition: 'border-color 0.2s, background 0.2s' }}
+  key={prog.id}
+
+                style={{ background: '#0c1526', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', cursor: 'default', transition: 'border-color 0.2s, background 0.2s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.background = '#0c1526' }}
               >
@@ -245,12 +264,165 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748b' }}>
                     <MapPin size={12} /> {prog.venue || 'N/A'}
                   </div>
+                  <div style={{
+  marginTop: '6px',
+  fontSize: '12px',
+  color: '#9ca3af'
+}}>
+  Participants: {progAttendance.length}
+</div>
+                  <button
+  onClick={() => setSelectedProg(prog)}
+  style={{
+    marginTop: '10px',
+    padding: '8px 12px',
+    background: '#3b82f6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: '600'
+  }}
+>
+  Generate QR
+</button>
+                  </div>
+{sysRole === 'admin' && (
+  <div style={{ marginTop: '10px' }}>
+
+    <div style={{
+      marginBottom: '6px',
+      fontSize: '12px',
+      color: '#9ca3af'
+    }}>
+      Status: {statusMap[prog.id] === 'approved'
+  ? 'Approved '
+  : statusMap[prog.id] === 'rejected'
+  ? 'Rejected '
+  : 'Pending'}
+    </div>
+
+    <div
+  onClick={(e) => e.stopPropagation()}
+  style={{ display: 'flex', gap: '8px' }}
+>
+
+      <button
+  disabled={statusMap[prog.id] === 'approved'}
+  onClick={async (e) => {
+    e.stopPropagation()
+
+    const res = await fetch('/api/merit/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merit_id: prog.id,
+        action: 'approve'
+      })
+    })
+
+    const data = await res.json()
+
+    if (data.success) {
+      setActionMessage('Approved successfully ✅')
+setActionType('approve')
+setStatusMap(prev => ({ ...prev, [prog.id]: 'approved' }))
+setTimeout(() => setActionMessage(''), 3000)
+    } else {
+      setActionMessage('Something went wrong ❌')
+    }
+  }}
+  style={{
+  padding: '8px 14px',
+  background:
+  statusMap[prog.id] === 'approved' ||
+  statusMap[prog.id] === 'rejected'
+    ? '#6b7280'
+    : '#22c55e',
+  color: 'white',
+  border: 'none',
+  borderRadius: '8px',
+  cursor:
+  statusMap[prog.id] === 'approved' ||
+  statusMap[prog.id] === 'rejected'
+    ? 'not-allowed'
+    : 'pointer',
+  fontWeight: '600',
+  opacity:
+  statusMap[prog.id] === 'approved' ||
+  statusMap[prog.id] === 'rejected'
+    ? 0.6
+    : 1
+}}
+>
+  Approve
+</button>
+
+<button
+disabled={
+  statusMap[prog.id] === 'approved' ||
+  statusMap[prog.id] === 'rejected'
+}
+  onClick={async (e) => {
+    e.stopPropagation()
+
+    const res = await fetch('/api/merit/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merit_id: prog.id,
+        action: 'reject'
+      })
+    })
+
+    const data = await res.json()
+
+    if (data.success) {
+      setActionMessage('Rejected successfully ❌')
+setActionType('reject')
+setStatusMap(prev => ({ ...prev, [prog.id]: 'rejected' }))
+setTimeout(() => setActionMessage(''), 3000)
+    } else {
+      setActionMessage('Something went wrong ❌')
+    }
+  }}
+  style={{
+    padding: '8px 14px',
+    background:
+    statusMap[prog.id] === 'approved' ||
+    statusMap[prog.id] === 'rejected'
+      ? '#6b7280'
+      : '#ef4444',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: '600'
+  }}
+>
+  Reject
+</button>
+    </div>
+{actionMessage && (
+  <div style={{
+    marginTop: '8px',
+    fontSize: '13px',
+    color: actionType === 'approve' ? '#22c55e' : '#ef4444',
+    fontWeight: '500'
+  }}>
+    {actionMessage}
+  </div>
+)}
+  </div>
+)}
                 </div>
-              </div>
+              
             )
           })
         )}
       </div>
+
+
 
       {/* Programme Details Modal */}
       {selectedProg && (
@@ -321,7 +493,11 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ width: '100%', maxWidth: '500px' }}>
               <Scanner 
-                onScan={(result) => handleScan(result[0].rawValue)} 
+                onScan={(result) => {
+  if (result && result.length > 0) {
+    handleScan(result[0].rawValue)
+  }
+}}
                 components={{ audio: false, finder: true }}
                 styles={{ container: { width: '100%', height: '100vh' } }}
               />
