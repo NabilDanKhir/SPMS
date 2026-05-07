@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { useRouter, usePathname } from "next/navigation"
 
-const TIMEOUT = 1 * 60 * 1000   // 1 minute of inactivity before logout
+const TIMEOUT = 10 * 60 * 1000   // 10 minutes of inactivity before logout
 const WARNING_DURATION = 5 * 1000 // show warning 5 s before logout
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/update-password"]
