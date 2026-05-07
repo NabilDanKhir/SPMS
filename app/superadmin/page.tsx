@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Users, Settings, LogOut, Bell,
   CirclePlus, Pencil, Trash, Save, CircleX, TrendingUp, Clock,
   CheckCircle, XCircle, AlertCircle, Search, Shield, Calendar,
-  MapPin, DollarSign, Activity, ArrowRightLeft, Crown, Eye, FileText, Upload, QrCode
+  MapPin, DollarSign, Activity, ArrowRightLeft, Crown, Eye, FileText, Upload, QrCode, X
 } from 'lucide-react'
 import { PRE_CHECKLIST } from '../../lib/constants'
 
@@ -39,6 +39,7 @@ function getStatusConfig(status: string) {
     case 'Approved': return { bg: 'rgba(16,185,129,0.12)',  color: '#10b981', icon: CheckCircle }
     case 'Rejected': return { bg: 'rgba(239,68,68,0.12)',   color: '#ef4444', icon: XCircle }
     case 'Pending':  return { bg: 'rgba(245,158,11,0.12)',  color: '#f59e0b', icon: AlertCircle }
+    case 'Under Review': return { bg: 'rgba(56,189,248,0.12)', color: '#38bdf8', icon: Clock }
     default:         return { bg: 'rgba(148,163,184,0.12)', color: '#94a3b8', icon: Clock }
   }
 }
@@ -318,65 +319,74 @@ function EditModal({ show, isMobile, editForm, actionLoading, onClose, onChange,
 }
 
 /* ─── REVIEW MODAL ───────────────────────────────────────────────────────── */
-function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoading, preDocs, preDocsLoading, getToken, onClose, onCommentChange, onApprove, onReject }: {
-  prog: Programme | null; isMobile: boolean; rejectComment: string
-  actionLoading: boolean; rejectLoading: boolean
-  preDocs: Array<{ phase: string; doc_type?: string; file_name?: string }>; preDocsLoading: boolean
+function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoading, preDocs, preDocsLoading, getToken, onClose, onCommentChange, onApprove, onReject, onDocsChange }: {
+  prog: Programme | null; isMobile: boolean; rejectComment: string; actionLoading: boolean; rejectLoading: boolean
+  preDocs: Array<{ id: string; phase: string; doc_type?: string; file_name?: string; file_path?: string }>; preDocsLoading: boolean
   getToken: () => Promise<string | null>
   onClose: () => void; onCommentChange: (v: string) => void; onApprove: () => void; onReject: () => void
+  onDocsChange: (docs: Array<{ id: string; phase: string; doc_type?: string; file_name?: string; file_path?: string }>) => void
 }) {
-  const [approvalLetterFile, setApprovalLetterFile] = useState<File | null>(null)
   const [updatedPaperworkFile, setUpdatedPaperworkFile] = useState<File | null>(null)
-  const [approvalLetterDoc, setApprovalLetterDoc] = useState<{ file_name: string } | null>(null)
-  const [updatedPaperworkDoc, setUpdatedPaperworkDoc] = useState<{ file_name: string } | null>(null)
-  const [uploadingApprovalLetter, setUploadingApprovalLetter] = useState(false)
+  const [updatedPaperworkDoc, setUpdatedPaperworkDoc] = useState<{ id: string; file_name: string; file_path: string } | null>(null)
   const [uploadingUpdatedPaperwork, setUploadingUpdatedPaperwork] = useState(false)
+  const [removingUpdatedPaperwork, setRemovingUpdatedPaperwork] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
-    setApprovalLetterFile(null)
     setUpdatedPaperworkFile(null)
-    setApprovalLetterDoc(null)
-    setUpdatedPaperworkDoc(null)
     setUploadError(null)
-  }, [prog?.id])
+    const paperworkDoc = preDocs.find(d => d.phase === 'approval' && d.doc_type === 'updated_paperwork')
+    setUpdatedPaperworkDoc(paperworkDoc ? { id: paperworkDoc.id, file_name: paperworkDoc.file_name || 'Updated Paperwork', file_path: paperworkDoc.file_path || '' } : null)
+  }, [prog?.id, preDocs])
 
-  const uploadApprovalDoc = async (file: File, docType: 'approval_letter' | 'updated_paperwork') => {
-    if (!prog) return false
+  const refreshDocs = async () => {
+    if (!prog) return
     const token = await getToken()
-    if (!token) { setUploadError('Not authenticated'); return false }
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('programme_id', prog.id)
-    formData.append('phase', 'approval')
-    formData.append('doc_type', docType)
-    const res = await fetch('/api/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
-    if (!res.ok) {
+    if (!token) return
+    const res = await fetch(`/api/programmes/${prog.id}/documents`, { headers: { Authorization: `Bearer ${token}` } })
+    if (res.ok) {
       const data = await res.json()
-      setUploadError(data.error ?? 'Upload failed')
-      return false
+      onDocsChange(Array.isArray(data) ? data : (data.data ?? []))
     }
-    setUploadError(null)
-    return true
-  }
-
-  const handleUploadApprovalLetter = async () => {
-    if (!approvalLetterFile) return
-    setUploadingApprovalLetter(true)
-    const ok = await uploadApprovalDoc(approvalLetterFile, 'approval_letter')
-    if (ok) { setApprovalLetterDoc({ file_name: approvalLetterFile.name }); setApprovalLetterFile(null) }
-    setUploadingApprovalLetter(false)
   }
 
   const handleUploadUpdatedPaperwork = async () => {
-    if (!updatedPaperworkFile) return
+    if (!updatedPaperworkFile || !prog) return
     setUploadingUpdatedPaperwork(true)
-    const ok = await uploadApprovalDoc(updatedPaperworkFile, 'updated_paperwork')
-    if (ok) { setUpdatedPaperworkDoc({ file_name: updatedPaperworkFile.name }); setUpdatedPaperworkFile(null) }
+    const token = await getToken()
+    if (!token) { setUploadError('Not authenticated'); setUploadingUpdatedPaperwork(false); return }
+    const formData = new FormData()
+    formData.append('file', updatedPaperworkFile)
+    formData.append('programme_id', prog.id)
+    formData.append('phase', 'approval')
+    formData.append('doc_type', 'updated_paperwork')
+    const res = await fetch('/api/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
+    if (res.ok) {
+      setUpdatedPaperworkFile(null)
+      setUploadError(null)
+      await refreshDocs()
+    } else {
+      const data = await res.json()
+      setUploadError(data.error ?? 'Upload failed')
+    }
     setUploadingUpdatedPaperwork(false)
   }
 
-  const bothDocsUploaded = !!approvalLetterDoc && !!updatedPaperworkDoc
+  const handleRemoveUpdatedPaperwork = async () => {
+    if (!updatedPaperworkDoc?.id || !prog) return
+    setRemovingUpdatedPaperwork(true)
+    const token = await getToken()
+    if (!token) { setRemovingUpdatedPaperwork(false); return }
+    const res = await fetch(`/api/programmes/${prog.id}/documents/${updatedPaperworkDoc.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    if (res.ok) {
+      setUpdatedPaperworkDoc(null)
+      onDocsChange(preDocs.filter(d => d.id !== updatedPaperworkDoc.id))
+    } else {
+      const data = await res.json()
+      setUploadError(data.error ?? 'Remove failed')
+    }
+    setRemovingUpdatedPaperwork(false)
+  }
 
   if (!prog) return null
 
@@ -416,27 +426,20 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
             <FileText size={13} color="#60a5fa" />
             <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pre-Phase Documents</p>
-            {preDocsLoading && (
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.25)', borderTopColor: '#60a5fa', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
-            )}
+            {preDocsLoading && <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.25)', borderTopColor: '#60a5fa', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
             {PRE_CHECKLIST.map(item => {
               const doc = preDocs.find(d => d.phase === 'pre' && d.doc_type === item.key)
               return (
                 <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: doc ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)', border: `1px solid ${doc ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, borderRadius: '8px' }}>
-                  {doc
-                    ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} />
-                    : <XCircle size={14} color="#ef4444" style={{ flexShrink: 0 }} />}
+                  {doc ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} /> : <XCircle size={14} color="#ef4444" style={{ flexShrink: 0 }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: doc ? '#e2e8f0' : '#94a3b8' }}>{item.label}</p>
                     <p style={{ margin: '1px 0 0', fontSize: '11px', color: doc ? '#60a5fa' : '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {doc ? (doc.file_name || 'Uploaded') : 'Not uploaded'}
                     </p>
                   </div>
-                  {doc && (
-                    <span style={{ fontSize: '10px', fontWeight: 500, color: '#10b981', background: 'rgba(16,185,129,0.12)', padding: '2px 7px', borderRadius: '4px', flexShrink: 0 }}>Done</span>
-                  )}
                 </div>
               )
             })}
@@ -445,45 +448,18 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
 
         <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', marginBottom: '18px' }} />
 
-        {/* Approval documents — required before approving */}
+        {/* Updated Paperwork upload */}
         <div style={{ marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <Upload size={13} color="#a78bfa" />
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Approval Documents</p>
-            <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 500 }}>(required to approve)</span>
+            <Upload size={13} color={SA.accentText} />
+            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Updated Paperwork</p>
+            <span style={{ fontSize: '10px', color: SA.accentText, fontWeight: 500 }}>(required to approve)</span>
           </div>
           {uploadError && (
             <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', marginBottom: '8px' }}>
               <p style={{ margin: 0, fontSize: '11px', color: '#ef4444' }}>{uploadError}</p>
             </div>
           )}
-          {/* Approval Letter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: approvalLetterDoc ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)', border: `1px solid ${approvalLetterDoc ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '8px', marginBottom: '6px' }}>
-            {approvalLetterDoc ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} /> : <Upload size={14} color="#6b7280" style={{ flexShrink: 0 }} />}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: approvalLetterDoc ? '#e2e8f0' : '#94a3b8' }}>Approval Letter</p>
-              <p style={{ margin: '1px 0 0', fontSize: '11px', color: approvalLetterDoc ? '#10b981' : (approvalLetterFile ? '#60a5fa' : '#4b5563'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {approvalLetterDoc ? approvalLetterDoc.file_name : (approvalLetterFile ? approvalLetterFile.name : 'No file selected')}
-              </p>
-            </div>
-            {approvalLetterDoc ? (
-              <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981', flexShrink: 0 }}>Uploaded</span>
-            ) : (
-              <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.1)', color: '#a78bfa', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
-                  <FileText size={11} />Choose
-                  <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={e => { setApprovalLetterFile(e.target.files?.[0] ?? null); e.target.value = '' }} style={{ display: 'none' }} />
-                </label>
-                {approvalLetterFile && (
-                  <button onClick={handleUploadApprovalLetter} disabled={uploadingApprovalLetter}
-                    style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: 'none', background: uploadingApprovalLetter ? 'rgba(16,185,129,0.4)' : '#059669', color: 'white', fontSize: '11px', fontWeight: 500, cursor: uploadingApprovalLetter ? 'not-allowed' : 'pointer' }}>
-                    <Upload size={11} />{uploadingApprovalLetter ? '...' : 'Upload'}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          {/* Updated Paperwork */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: updatedPaperworkDoc ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)', border: `1px solid ${updatedPaperworkDoc ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '8px' }}>
             {updatedPaperworkDoc ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} /> : <Upload size={14} color="#6b7280" style={{ flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -493,11 +469,20 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
               </p>
             </div>
             {updatedPaperworkDoc ? (
-              <span style={{ fontSize: '10px', fontWeight: 600, color: '#10b981', flexShrink: 0 }}>Uploaded</span>
+              <button onClick={handleRemoveUpdatedPaperwork} disabled={removingUpdatedPaperwork}
+                style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: '11px', fontWeight: 500, cursor: removingUpdatedPaperwork ? 'not-allowed' : 'pointer' }}>
+                <X size={11} />{removingUpdatedPaperwork ? '...' : 'Remove'}
+              </button>
             ) : (
               <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(167,139,250,0.3)', background: 'rgba(167,139,250,0.1)', color: '#a78bfa', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
-                  <FileText size={11} />Choose
+                {updatedPaperworkFile && (
+                  <button onClick={() => setUpdatedPaperworkFile(null)}
+                    style={{ display: 'flex', alignItems: 'center', padding: '4px 7px', borderRadius: '5px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: '11px', cursor: 'pointer' }}>
+                    <X size={11} />
+                  </button>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: `1px solid ${SA.accentBorder}`, background: SA.accentBg, color: SA.accentText, fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
+                  <FileText size={11} />{updatedPaperworkFile ? 'Change' : 'Choose'}
                   <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg" onChange={e => { setUpdatedPaperworkFile(e.target.files?.[0] ?? null); e.target.value = '' }} style={{ display: 'none' }} />
                 </label>
                 {updatedPaperworkFile && (
@@ -520,7 +505,7 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
             <span style={{ color: '#374151', fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: '6px' }}>(required only when rejecting)</span>
           </label>
           <textarea value={rejectComment} onChange={e => onCommentChange(e.target.value)}
-            placeholder="Explain why this programme is being rejected so the director can revise and resubmit..." rows={3}
+            placeholder="Explain why this programme is being rejected..." rows={3}
             style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${rejectComment.trim() ? 'rgba(239,68,68,0.35)' : 'rgba(255,255,255,0.08)'}`, color: '#e2e8f0', fontSize: '13px', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit', lineHeight: 1.6 }} />
         </div>
         <div style={{ display: 'flex', gap: '8px', flexDirection: isMobile ? 'column' : 'row' }}>
@@ -531,9 +516,9 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
             style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: rejectComment.trim() ? 'rgba(239,68,68,0.85)' : 'rgba(239,68,68,0.25)', color: 'white', fontSize: '13px', fontWeight: 500, cursor: rejectComment.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: rejectLoading ? 0.7 : 1 }}>
             <XCircle size={14} />{rejectLoading ? 'Rejecting...' : 'Reject'}
           </button>
-          <button onClick={onApprove} disabled={actionLoading || !bothDocsUploaded}
-            title={!bothDocsUploaded ? 'Upload both approval documents first' : undefined}
-            style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: bothDocsUploaded ? 'linear-gradient(135deg, #059669, #10b981)' : 'rgba(16,185,129,0.2)', color: bothDocsUploaded ? 'white' : '#4b5563', fontSize: '13px', fontWeight: 500, cursor: bothDocsUploaded && !actionLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: actionLoading ? 0.7 : 1 }}>
+          <button onClick={onApprove} disabled={actionLoading || !updatedPaperworkDoc}
+            title={!updatedPaperworkDoc ? 'Upload updated paperwork first' : undefined}
+            style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: updatedPaperworkDoc ? SA.gradientBtn : 'rgba(245,158,11,0.2)', color: updatedPaperworkDoc ? 'white' : '#4b5563', fontSize: '13px', fontWeight: 500, cursor: updatedPaperworkDoc && !actionLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: actionLoading ? 0.7 : 1 }}>
             <CheckCircle size={14} />{actionLoading ? 'Approving...' : 'Approve'}
           </button>
         </div>
@@ -601,7 +586,7 @@ function MobileProgrammeCards({ filtered, onEdit, onDelete, onReview, onView }: 
                 {prog.budget ? `RM ${Number(prog.budget).toLocaleString('en-MY', { minimumFractionDigits: 2 })}` : '—'}
               </span>
               <div style={{ display: 'flex', gap: '4px' }}>
-                {prog.status === 'Pending' && (
+                {prog.status === 'Under Review' && (
                   <button onClick={() => onReview(prog)} style={{ background: SA.accentBg, border: `1px solid ${SA.accentBorder}`, borderRadius: '5px', padding: '5px 8px', cursor: 'pointer', color: SA.accentText, display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 500 }}>
                     <Shield size={11} />Review
                   </button>
@@ -671,7 +656,7 @@ function DesktopTable({ filtered, onEdit, onDelete, onReview, onView }: {
                 </td>
                 <td style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    {prog.status === 'Pending' && (
+                    {prog.status === 'Under Review' && (
                       <button onClick={() => onReview(prog)} style={{ background: SA.accentBg, border: `1px solid ${SA.accentBorder}`, borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', color: SA.accentText, display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 500 }}>
                         <Shield size={12} />Review
                       </button>
@@ -715,7 +700,7 @@ export default function SuperAdminDashboard() {
   const [rejectComment, setRejectComment] = useState('')
   const [rejectLoading, setRejectLoading] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
-  const [reviewDocs, setReviewDocs] = useState<Array<{ phase: string; doc_type?: string; file_name?: string }>>([])
+  const [reviewDocs, setReviewDocs] = useState<Array<{ id: string; phase: string; doc_type?: string; file_name?: string; file_path?: string }>>([])
   const [reviewDocsLoading, setReviewDocsLoading] = useState(false)
 
   // null = not yet measured — prevents desktop flash on mobile
@@ -755,7 +740,7 @@ export default function SuperAdminDashboard() {
         { count: totalUsers },
         { count: totalAdmins },
       ] = await Promise.all([
-        supabase.from('programmes').select('*').order('created_at', { ascending: false }),
+        supabase.from('programmes').select('*').neq('status', 'Pending').order('created_at', { ascending: false }),
         supabase.from('users').select('*', { count: 'exact', head: true }),
         supabase.from('users').select('*, roles!inner(name)', { count: 'exact', head: true }).eq('roles.name', 'admin'),
       ])
@@ -1003,12 +988,12 @@ export default function SuperAdminDashboard() {
                   style={{ width: '100%', padding: '8px 10px 8px 28px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '7px', color: '#e2e8f0', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
               </div>
               <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '2px' }}>
-                {(['All', 'Pending', 'Approved', 'Rejected'] as const).map(s => (
+                {(['All', 'Under Review', 'Approved', 'Rejected'] as const).map(s => (
                   <button key={s} onClick={() => setFilterStatus(s)}
                     style={{ padding: '5px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '10px', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0, background: filterStatus === s ? SA.accentBg : 'rgba(255,255,255,0.04)', color: filterStatus === s ? SA.accentText : '#6b7280' }}>
                     <>
                       {s}
-                      {s !== 'All' && ` (${s === 'Pending' ? stats.pending : s === 'Approved' ? stats.approved : stats.rejected})`}
+                      {s !== 'All' && ` (${s === 'Under Review' ? programmes.filter(p => p.status === 'Under Review').length : s === 'Approved' ? stats.approved : stats.rejected})`}
                     </>
                   </button>
                 ))}
@@ -1046,6 +1031,7 @@ export default function SuperAdminDashboard() {
           getToken={getToken}
           onClose={handleCloseReview}
           onCommentChange={setRejectComment} onApprove={handleApprove} onReject={handleReject}
+          onDocsChange={setReviewDocs}
         />
         <LoadingOverlay actionLoading={actionLoading} rejectLoading={rejectLoading} deleteLoading={deleteLoading} rejectComment={rejectComment} />
       </div>
@@ -1196,12 +1182,12 @@ export default function SuperAdminDashboard() {
                   style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '7px', padding: '7px 10px 7px 30px', color: '#e2e8f0', fontSize: '12px', outline: 'none', width: '180px' }} />
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
-                {['All', 'Pending', 'Approved', 'Rejected'].map(s => (
+                {['All', 'Under Review', 'Approved', 'Rejected'].map(s => (
                   <button key={s} onClick={() => setFilterStatus(s)}
                     style={{ padding: '6px 10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 500, background: filterStatus === s ? SA.accentBg : 'rgba(255,255,255,0.04)', color: filterStatus === s ? SA.accentText : '#6b7280' }}>
                     <>
                       {s}
-                      {s !== 'All' && <span style={{ marginLeft: '4px', fontSize: '10px', opacity: 0.7 }}>({s === 'Pending' ? stats.pending : s === 'Approved' ? stats.approved : stats.rejected})</span>}
+                      {s !== 'All' && <span style={{ marginLeft: '4px', fontSize: '10px', opacity: 0.7 }}>({s === 'Under Review' ? programmes.filter(p => p.status === 'Under Review').length : s === 'Approved' ? stats.approved : stats.rejected})</span>}
                     </>
                   </button>
                 ))}
@@ -1223,6 +1209,7 @@ export default function SuperAdminDashboard() {
         getToken={getToken}
         onClose={handleCloseReview}
         onCommentChange={setRejectComment} onApprove={handleApprove} onReject={handleReject}
+        onDocsChange={setReviewDocs}
       />
       <LoadingOverlay actionLoading={actionLoading} rejectLoading={rejectLoading} deleteLoading={deleteLoading} rejectComment={rejectComment} />
     </div>
