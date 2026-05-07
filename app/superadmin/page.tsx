@@ -328,15 +328,20 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
 }) {
   const [updatedPaperworkFile, setUpdatedPaperworkFile] = useState<File | null>(null)
   const [updatedPaperworkDoc, setUpdatedPaperworkDoc] = useState<{ id: string; file_name: string; file_path: string } | null>(null)
+  const [adminPaperworkDoc, setAdminPaperworkDoc] = useState<{ id: string; file_name: string; file_path: string } | null>(null)
   const [uploadingUpdatedPaperwork, setUploadingUpdatedPaperwork] = useState(false)
   const [removingUpdatedPaperwork, setRemovingUpdatedPaperwork] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewName, setPreviewName] = useState<string>('')
 
   useEffect(() => {
     setUpdatedPaperworkFile(null)
     setUploadError(null)
-    const paperworkDoc = preDocs.find(d => d.phase === 'approval' && d.doc_type === 'updated_paperwork')
-    setUpdatedPaperworkDoc(paperworkDoc ? { id: paperworkDoc.id, file_name: paperworkDoc.file_name || 'Updated Paperwork', file_path: paperworkDoc.file_path || '' } : null)
+    const adminDoc = preDocs.find(d => d.phase === 'approval' && d.doc_type === 'updated_paperwork')
+    setAdminPaperworkDoc(adminDoc ? { id: adminDoc.id, file_name: adminDoc.file_name || 'Paperwork', file_path: adminDoc.file_path || '' } : null)
+    const saDoc = preDocs.find(d => d.phase === 'approval' && d.doc_type === 'superadmin_paperwork')
+    setUpdatedPaperworkDoc(saDoc ? { id: saDoc.id, file_name: saDoc.file_name || 'Approval Document', file_path: saDoc.file_path || '' } : null)
   }, [prog?.id, preDocs])
 
   const refreshDocs = async () => {
@@ -350,6 +355,30 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
     }
   }
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+  const getPublicUrl = (filePath: string) => `${supabaseUrl}/storage/v1/object/public/documents/${filePath}`
+  const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name)
+  const isPdf = (name: string) => /\.pdf$/i.test(name)
+
+  const handleView = (doc: { file_name?: string; file_path?: string }) => {
+    if (!doc.file_path) return
+    setPreviewName(doc.file_name || 'Document')
+    setPreviewUrl(getPublicUrl(doc.file_path))
+  }
+
+  const handleDownload = async (doc: { file_name?: string; file_path?: string }) => {
+    if (!doc.file_path) return
+    const url = getPublicUrl(doc.file_path)
+    const res = await fetch(url)
+    const blob = await res.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl; a.download = doc.file_name || 'file'
+    document.body.appendChild(a); a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(blobUrl)
+  }
+
   const handleUploadUpdatedPaperwork = async () => {
     if (!updatedPaperworkFile || !prog) return
     setUploadingUpdatedPaperwork(true)
@@ -359,7 +388,7 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
     formData.append('file', updatedPaperworkFile)
     formData.append('programme_id', prog.id)
     formData.append('phase', 'approval')
-    formData.append('doc_type', 'updated_paperwork')
+    formData.append('doc_type', 'superadmin_paperwork')
     const res = await fetch('/api/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
     if (res.ok) {
       setUpdatedPaperworkFile(null)
@@ -391,9 +420,50 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
   if (!prog) return null
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, backdropFilter: 'blur(4px)', padding: '16px' }}>
-      <div style={{ background: '#0f1a24', border: `1px solid ${SA.accentBorder}`, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto' }}>
+    <>
+      {previewUrl && (
+        <div onClick={() => setPreviewUrl(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '16px' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: '#0f1a24', border: `1px solid ${SA.accentBorder}`, borderRadius: '14px', width: '100%', maxWidth: '820px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <FileText size={14} color={SA.accentText} />
+                <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{previewName}</p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginLeft: '12px' }}>
+                <a href={previewUrl} download={previewName} target="_blank" rel="noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.1)', color: '#34d399', fontSize: '12px', fontWeight: 500, textDecoration: 'none', cursor: 'pointer' }}>
+                  <Activity size={12} />Download
+                </a>
+                <button onClick={() => setPreviewUrl(null)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#94a3b8', fontSize: '12px', cursor: 'pointer' }}>
+                  <CircleX size={12} />Close
+                </button>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', minHeight: '300px' }}>
+              {isPdf(previewName) ? (
+                <iframe src={previewUrl} title={previewName} style={{ width: '100%', height: '100%', minHeight: '500px', border: 'none', borderRadius: '8px' }} />
+              ) : isImage(previewName) ? (
+                <img src={previewUrl} alt={previewName} style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '8px', objectFit: 'contain' }} />
+              ) : (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <FileText size={48} color="#374151" style={{ marginBottom: '12px' }} />
+                  <p style={{ color: '#6b7280', fontSize: '13px', marginBottom: '16px' }}>Preview not available for this file type.</p>
+                  <a href={previewUrl} download={previewName}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 18px', borderRadius: '8px', background: SA.gradientBtn, color: 'white', fontSize: '13px', fontWeight: 500, textDecoration: 'none' }}>
+                    <Activity size={14} />Download to view
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <div onClick={e => { if (e.target === e.currentTarget) onClose() }}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, backdropFilter: 'blur(4px)', padding: '16px' }}>
+        <div style={{ background: '#0f1a24', border: `1px solid ${SA.accentBorder}`, borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f1f5f9', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Shield size={15} color={SA.accentText} />Review Programme
@@ -421,38 +491,40 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
 
         <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', marginBottom: '18px' }} />
 
-        {/* Pre-phase documents */}
+        {/* Admin's Attached Paperwork (read-only) */}
         <div style={{ marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <FileText size={13} color="#60a5fa" />
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pre-Phase Documents</p>
-            {preDocsLoading && <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '2px solid rgba(96,165,250,0.25)', borderTopColor: '#60a5fa', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
+            <FileText size={13} color="#a78bfa" />
+            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Admin's Attached Paperwork</p>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-            {PRE_CHECKLIST.map(item => {
-              const doc = preDocs.find(d => d.phase === 'pre' && d.doc_type === item.key)
-              return (
-                <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: doc ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)', border: `1px solid ${doc ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, borderRadius: '8px' }}>
-                  {doc ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} /> : <XCircle size={14} color="#ef4444" style={{ flexShrink: 0 }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: doc ? '#e2e8f0' : '#94a3b8' }}>{item.label}</p>
-                    <p style={{ margin: '1px 0 0', fontSize: '11px', color: doc ? '#60a5fa' : '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {doc ? (doc.file_name || 'Uploaded') : 'Not uploaded'}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: adminPaperworkDoc ? 'rgba(167,139,250,0.04)' : 'rgba(255,255,255,0.02)', border: `1px solid ${adminPaperworkDoc ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '8px' }}>
+            {adminPaperworkDoc ? <CheckCircle size={14} color="#a78bfa" style={{ flexShrink: 0 }} /> : <XCircle size={14} color="#4b5563" style={{ flexShrink: 0 }} />}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: adminPaperworkDoc ? '#e2e8f0' : '#94a3b8' }}>Updated Paperwork (Admin)</p>
+              <p style={{ margin: '1px 0 0', fontSize: '11px', color: adminPaperworkDoc ? '#a78bfa' : '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {adminPaperworkDoc ? adminPaperworkDoc.file_name : 'No paperwork attached by admin'}
+              </p>
+            </div>
+            {adminPaperworkDoc && (
+              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                <button onClick={() => handleView(adminPaperworkDoc)} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.1)', color: '#a78bfa', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
+                  <Eye size={11} />View
+                </button>
+                <button onClick={() => handleDownload(adminPaperworkDoc)} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.1)', color: '#34d399', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
+                  <Activity size={11} />Download
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
         <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', marginBottom: '18px' }} />
 
-        {/* Updated Paperwork upload */}
+        {/* Approval Document upload */}
         <div style={{ marginBottom: '18px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
             <Upload size={13} color={SA.accentText} />
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Updated Paperwork</p>
+            <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Approval Document</p>
             <span style={{ fontSize: '10px', color: SA.accentText, fontWeight: 500 }}>(required to approve)</span>
           </div>
           {uploadError && (
@@ -463,7 +535,7 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 13px', background: updatedPaperworkDoc ? 'rgba(16,185,129,0.04)' : 'rgba(255,255,255,0.02)', border: `1px solid ${updatedPaperworkDoc ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '8px' }}>
             {updatedPaperworkDoc ? <CheckCircle size={14} color="#10b981" style={{ flexShrink: 0 }} /> : <Upload size={14} color="#6b7280" style={{ flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: updatedPaperworkDoc ? '#e2e8f0' : '#94a3b8' }}>Updated Paperwork (Signed)</p>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: updatedPaperworkDoc ? '#e2e8f0' : '#94a3b8' }}>Approval Document (Signed)</p>
               <p style={{ margin: '1px 0 0', fontSize: '11px', color: updatedPaperworkDoc ? '#10b981' : (updatedPaperworkFile ? '#60a5fa' : '#4b5563'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {updatedPaperworkDoc ? updatedPaperworkDoc.file_name : (updatedPaperworkFile ? updatedPaperworkFile.name : 'No file selected')}
               </p>
@@ -517,13 +589,14 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
             <XCircle size={14} />{rejectLoading ? 'Rejecting...' : 'Reject'}
           </button>
           <button onClick={onApprove} disabled={actionLoading || !updatedPaperworkDoc}
-            title={!updatedPaperworkDoc ? 'Upload updated paperwork first' : undefined}
+            title={!updatedPaperworkDoc ? 'Upload approval document first' : undefined}
             style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: updatedPaperworkDoc ? SA.gradientBtn : 'rgba(245,158,11,0.2)', color: updatedPaperworkDoc ? 'white' : '#4b5563', fontSize: '13px', fontWeight: 500, cursor: updatedPaperworkDoc && !actionLoading ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: actionLoading ? 0.7 : 1 }}>
             <CheckCircle size={14} />{actionLoading ? 'Approving...' : 'Approve'}
           </button>
         </div>
       </div>
     </div>
+    </>
   )
 }
 
