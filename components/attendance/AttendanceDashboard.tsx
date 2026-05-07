@@ -40,9 +40,6 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
   const [programmes, setProgrammes] = useState<Programme[]>([])
   const [surveys, setSurveys] = useState<UserSurvey[]>([])
   const [roles, setRoles] = useState<UserRole[]>([])
-  const [actionMessage, setActionMessage] = useState('')
-  const [actionType, setActionType] = useState<'approve' | 'reject' | ''>('')
-  const [statusMap, setStatusMap] = useState<{ [key: string]: string }>({})
   const [attendance, setAttendance] = useState<any[]>([])
 
   const [activeTab, setActiveTab] = useState<'ongoing' | 'expired'>('ongoing')
@@ -70,13 +67,15 @@ export default function AttendanceDashboard({ sysRole }: { sysRole: 'student' | 
       setCurrentUserId(userId)
 
       const todayStr = new Date().toISOString().split('T')[0]
-      const { data: attendanceData, error: attendanceError } = await supabase
-  .from('attendance')
-  .select('*')
-
-if (!attendanceError) {
-  setAttendance(attendanceData || [])
-}
+      let attendanceRows: any[] = []
+      if (sysRole === 'student') {
+        const { data } = await supabase.from('attendance').select('*').eq('user_id', userId)
+        attendanceRows = data || []
+      } else {
+        const { data } = await supabase.from('attendance').select('*')
+        attendanceRows = data || []
+      }
+      setAttendance(attendanceRows)
 
       // Fetch ALL approved programmes that have started or start today
       const { data: progData } = await supabase
@@ -120,39 +119,56 @@ if (!attendanceError) {
   })
 
   const getAttendanceStatus = (progId: string) => {
-    const hasPre = surveys.some(s => s.programme_id === progId && s.type === 'pre')
-    const hasPost = surveys.some(s => s.programme_id === progId && s.type === 'post')
+    const record = attendance.find(
+      a => String(a.programme_id) === String(progId) && a.user_id === currentUserId
+    )
+    if (!record) return false
     return validateAttendance({
-  qr_start: true,
-  qr_end: true,
-  pre_survey: hasPre,
-  post_survey: hasPost
-}) === "valid"
+      qr_start:    record.qr_start    ?? false,
+      qr_end:      record.qr_end      ?? false,
+      pre_survey:  record.pre_survey  ?? false,
+      post_survey: record.post_survey ?? false,
+    }) === 'valid'
   }
 
   const handleScan = async (result: string) => {
     try {
       const payload = JSON.parse(result)
-      if (payload.spms_qr && payload.progId && payload.type) {
-        // Anti-cheat verification
-        const { data: existing } = await supabase
-          .from('surveys')
-          .select('id')
-          .eq('user_id', currentUserId)
-          .eq('programme_id', payload.progId)
-          .eq('type', payload.type)
-          .maybeSingle()
+      if (!payload.spms_qr || !payload.progId || !payload.type) return
 
-        if (existing) {
-          alert(`You have already completed the ${payload.type.toUpperCase()} survey for this programme.`)
-          setShowScanner(false)
-        } else {
-          setShowScanner(false)
-          router.push(`/student/${payload.type}-survey?programme_id=${payload.progId}`)
-        }
+      // Anti-cheat: check if survey already submitted
+      const { data: existing } = await supabase
+        .from('surveys')
+        .select('id')
+        .eq('user_id', currentUserId)
+        .eq('programme_id', payload.progId)
+        .eq('type', payload.type)
+        .maybeSingle()
+
+      if (existing) {
+        alert(`You have already completed the ${payload.type.toUpperCase()} survey for this programme.`)
+        setShowScanner(false)
+        return
       }
-    } catch (e) {
-      // Ignore parse errors from non-SPMS QR codes silently
+
+      // Record QR scan in attendance table
+      const qrField = payload.type === 'pre' ? 'qr_start' : 'qr_end'
+      const { error: attError } = await supabase
+        .from('attendance')
+        .upsert(
+          { user_id: currentUserId, programme_id: payload.progId, [qrField]: true },
+          { onConflict: 'user_id,programme_id' }
+        )
+
+      if (attError) {
+        alert('Could not record attendance scan. Please try again.')
+        return
+      }
+
+      setShowScanner(false)
+      router.push(`/student/${payload.type}-survey?programme_id=${payload.progId}`)
+    } catch {
+      // Ignore non-SPMS QR codes silently
     }
   }
 
@@ -238,6 +254,7 @@ if (!attendanceError) {
             const progAttendance = attendance.filter(
   a => String(a.programme_id) === String(prog.id)
 )
+            const isAttended = getAttendanceStatus(prog.id)
             return (
               <div 
   key={prog.id}
@@ -284,137 +301,9 @@ if (!attendanceError) {
     fontWeight: '600'
   }}
 >
-  Generate QR
+  View Details
 </button>
                   </div>
-{sysRole === 'admin' && (
-  <div style={{ marginTop: '10px' }}>
-
-    <div style={{
-      marginBottom: '6px',
-      fontSize: '12px',
-      color: '#9ca3af'
-    }}>
-      Status: {statusMap[prog.id] === 'approved'
-  ? 'Approved '
-  : statusMap[prog.id] === 'rejected'
-  ? 'Rejected '
-  : 'Pending'}
-    </div>
-
-    <div
-  onClick={(e) => e.stopPropagation()}
-  style={{ display: 'flex', gap: '8px' }}
->
-
-      <button
-  disabled={statusMap[prog.id] === 'approved'}
-  onClick={async (e) => {
-    e.stopPropagation()
-
-    const res = await fetch('/api/merit/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        merit_id: prog.id,
-        action: 'approve'
-      })
-    })
-
-    const data = await res.json()
-
-    if (data.success) {
-      setActionMessage('Approved successfully ✅')
-setActionType('approve')
-setStatusMap(prev => ({ ...prev, [prog.id]: 'approved' }))
-setTimeout(() => setActionMessage(''), 3000)
-    } else {
-      setActionMessage('Something went wrong ❌')
-    }
-  }}
-  style={{
-  padding: '8px 14px',
-  background:
-  statusMap[prog.id] === 'approved' ||
-  statusMap[prog.id] === 'rejected'
-    ? '#6b7280'
-    : '#22c55e',
-  color: 'white',
-  border: 'none',
-  borderRadius: '8px',
-  cursor:
-  statusMap[prog.id] === 'approved' ||
-  statusMap[prog.id] === 'rejected'
-    ? 'not-allowed'
-    : 'pointer',
-  fontWeight: '600',
-  opacity:
-  statusMap[prog.id] === 'approved' ||
-  statusMap[prog.id] === 'rejected'
-    ? 0.6
-    : 1
-}}
->
-  Approve
-</button>
-
-<button
-disabled={
-  statusMap[prog.id] === 'approved' ||
-  statusMap[prog.id] === 'rejected'
-}
-  onClick={async (e) => {
-    e.stopPropagation()
-
-    const res = await fetch('/api/merit/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        merit_id: prog.id,
-        action: 'reject'
-      })
-    })
-
-    const data = await res.json()
-
-    if (data.success) {
-      setActionMessage('Rejected successfully ❌')
-setActionType('reject')
-setStatusMap(prev => ({ ...prev, [prog.id]: 'rejected' }))
-setTimeout(() => setActionMessage(''), 3000)
-    } else {
-      setActionMessage('Something went wrong ❌')
-    }
-  }}
-  style={{
-    padding: '8px 14px',
-    background:
-    statusMap[prog.id] === 'approved' ||
-    statusMap[prog.id] === 'rejected'
-      ? '#6b7280'
-      : '#ef4444',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: '600'
-  }}
->
-  Reject
-</button>
-    </div>
-{actionMessage && (
-  <div style={{
-    marginTop: '8px',
-    fontSize: '13px',
-    color: actionType === 'approve' ? '#22c55e' : '#ef4444',
-    fontWeight: '500'
-  }}>
-    {actionMessage}
-  </div>
-)}
-  </div>
-)}
                 </div>
               
             )
@@ -498,7 +387,8 @@ setTimeout(() => setActionMessage(''), 3000)
     handleScan(result[0].rawValue)
   }
 }}
-                components={{ audio: false, finder: true }}
+                components={{ finder: true }}
+                sound={false}
                 styles={{ container: { width: '100%', height: '100vh' } }}
               />
             </div>

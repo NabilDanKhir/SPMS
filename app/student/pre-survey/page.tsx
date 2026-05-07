@@ -1,138 +1,163 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useState } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
+import { ArrowLeft } from 'lucide-react'
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '8px',
+  padding: '10px 12px',
+  color: '#e2e8f0',
+  fontSize: '14px',
+  outline: 'none',
+  boxSizing: 'border-box',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  marginBottom: '6px',
+  fontSize: '13px',
+  fontWeight: 500,
+  color: '#94a3b8',
+}
 
 export default function PreSurvey() {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const programmeId = searchParams.get('programme_id')
 
-  const searchParams = useSearchParams();
-  const programmeId = searchParams.get("programme_id");
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
 
-  const handleSubmit = async (e: any) => {
-    e.preventDefault();
-    setLoading(true);
-
-    const form = e.target;
-
+    const form = e.currentTarget
     const data = {
-      familiarity: form[0].value,
-      expectations: form[1].value,
-      source: form[2].value,
-      role: form[3].value,
-      skills: form[4].value,
-      suggestions: form[5].value,
-    };
-
-    // ✅ get logged-in user
-    const { data: { user } } = await supabase.auth.getUser();
-
-    const { error } = await supabase.from("surveys").insert([
-      {
-        type: "pre",
-        answers: data,
-        completed: true,
-        user_id: user?.id,
-        programme_id: programmeId,
-      },
-    ]);
-
-    setLoading(false);
-
-    if (error) {
-      console.log(error);
-      alert("Failed to submit survey");
-    } else {
-      alert("Pre-survey submitted successfully!");
-      form.reset();
+      familiarity:  (form[0] as HTMLSelectElement).value,
+      expectations: (form[1] as HTMLTextAreaElement).value,
+      source:       (form[2] as HTMLSelectElement).value,
+      role:         (form[3] as HTMLSelectElement).value,
+      skills:       (form[4] as HTMLTextAreaElement).value,
+      suggestions:  (form[5] as HTMLTextAreaElement).value,
     }
-  };
 
-  const inputClass =
-    "w-full border border-gray-300 bg-white text-gray-900 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-400";
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { router.replace('/login'); return }
+
+    const { error: surveyError } = await supabase.from('surveys').insert([{
+      type:         'pre',
+      answers:      data,
+      completed:    true,
+      user_id:      user.id,
+      programme_id: programmeId,
+    }])
+
+    if (surveyError) {
+      console.error(surveyError)
+      setError('Failed to submit survey. Please try again.')
+      setLoading(false)
+      return
+    }
+
+    await supabase.from('attendance').upsert(
+      { user_id: user.id, programme_id: programmeId, pre_survey: true },
+      { onConflict: 'user_id,programme_id' }
+    )
+
+    setLoading(false)
+    router.push('/student/attendance')
+  }
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
-
-      <h1 className="text-2xl font-bold mb-2">
-        Pre-Programme Survey
-      </h1>
-
-      <p className="text-sm text-gray-500 mb-4">
-        Please complete this survey before the programme starts.
-      </p>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-
-        <div>
-          <label className="block mb-1 font-medium">
-            1. How familiar are you with the programme topic?
-          </label>
-          <select className={inputClass}>
-            <option value="">Select rating</option>
-            <option>1 - Not familiar</option>
-            <option>2</option>
-            <option>3</option>
-            <option>4</option>
-            <option>5 - Very familiar</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">
-            2. What are your expectations from this programme?
-          </label>
-          <textarea className={inputClass} rows={3} />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">
-            3. How did you hear about this programme?
-          </label>
-          <select className={inputClass}>
-            <option value="">Select option</option>
-            <option>WhatsApp</option>
-            <option>Friends</option>
-            <option>Poster</option>
-            <option>Lecturer</option>
-            <option>Other</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">
-            4. What is your role in this programme?
-          </label>
-          <select className={inputClass}>
-            <option>Participant</option>
-            <option>Committee Member</option>
-            <option>Observer</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">
-            5. What skills do you hope to gain?
-          </label>
-          <textarea className={inputClass} rows={3} />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">
-            6. Suggestions before programme starts
-          </label>
-          <textarea className={inputClass} rows={3} />
-        </div>
+    <div style={{ minHeight: '100vh', background: '#070e1a', fontFamily: "'Inter', sans-serif", color: '#f1f5f9', padding: '32px 16px' }}>
+      <div style={{ maxWidth: '560px', margin: '0 auto' }}>
 
         <button
-          type="submit"
-          className="w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600"
+          onClick={() => router.push('/student/attendance')}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748b', fontSize: '13px', cursor: 'pointer', marginBottom: '24px', padding: 0 }}
         >
-          {loading ? "Submitting..." : "Submit Pre-Survey"}
+          <ArrowLeft size={14} /> Back to Attendance
         </button>
 
-      </form>
+        <div style={{ background: '#0c1526', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '28px' }}>
+          <h1 style={{ margin: '0 0 4px', fontSize: '20px', fontWeight: 700, color: '#f1f5f9' }}>Pre-Programme Survey</h1>
+          <p style={{ margin: '0 0 24px', fontSize: '13px', color: '#64748b' }}>
+            Please complete this survey before the programme starts.
+          </p>
+
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#ef4444' }}>
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+            <div>
+              <label style={labelStyle}>1. How familiar are you with the programme topic?</label>
+              <select style={inputStyle} required>
+                <option value="">Select rating</option>
+                <option>1 - Not familiar</option>
+                <option>2</option>
+                <option>3</option>
+                <option>4</option>
+                <option>5 - Very familiar</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>2. What are your expectations from this programme?</label>
+              <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} required />
+            </div>
+
+            <div>
+              <label style={labelStyle}>3. How did you hear about this programme?</label>
+              <select style={inputStyle} required>
+                <option value="">Select option</option>
+                <option>WhatsApp</option>
+                <option>Friends</option>
+                <option>Poster</option>
+                <option>Lecturer</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>4. What is your role in this programme?</label>
+              <select style={inputStyle}>
+                <option>Participant</option>
+                <option>Committee Member</option>
+                <option>Observer</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>5. What skills do you hope to gain?</label>
+              <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} />
+            </div>
+
+            <div>
+              <label style={labelStyle}>6. Suggestions before programme starts</label>
+              <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={3} />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ padding: '12px', borderRadius: '10px', border: 'none', background: loading ? '#334155' : 'linear-gradient(135deg, #4f46e5, #6366f1)', color: 'white', fontSize: '14px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}
+            >
+              {loading ? 'Submitting...' : 'Submit Pre-Survey'}
+            </button>
+
+          </form>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
