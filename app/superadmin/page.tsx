@@ -508,7 +508,7 @@ function ReviewModal({ prog, isMobile, rejectComment, actionLoading, rejectLoadi
             {adminPaperworkDoc && (
               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                 <button onClick={() => handleView(adminPaperworkDoc)} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.1)', color: '#a78bfa', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
-                  <Eye size={11} />View
+                  <Eye size={11} />
                 </button>
                 <button onClick={() => handleDownload(adminPaperworkDoc)} style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 9px', borderRadius: '5px', border: '1px solid rgba(52,211,153,0.25)', background: 'rgba(52,211,153,0.1)', color: '#34d399', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}>
                   <Activity size={11} />Download
