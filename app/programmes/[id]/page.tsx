@@ -264,7 +264,7 @@ export default function ProgrammeDetailPage() {
 
     doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.text('UNIVERSITI MALAYSIA KELANTAN', pageWidth / 2, y, { align: 'center' })
+    doc.text('UNIVERSITI TEKNOLOGI MALAYSIA - KOLEJ SISWA JAYA', pageWidth / 2, y, { align: 'center' })
     y += 8
 
     doc.setFontSize(11)
@@ -334,8 +334,8 @@ export default function ProgrammeDetailPage() {
     doc.line(margin, y, pageWidth - margin, y)
     y += 7
 
-    addRow('Approved by Admin', programme.approved_by_admin_name || '—')
-    addRow('Approved by Superadmin', programme.approved_by_superadmin_name || '—')
+    addRow('Approved by Advisor', programme.approved_by_admin_name || '—')
+    addRow('Approved by Principal', programme.approved_by_superadmin_name || '—')
     addRow('Date of Approval', approvalDate)
     y += 10
 
